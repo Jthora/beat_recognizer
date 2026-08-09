@@ -1,0 +1,7 @@
+# Audio cache is fetched locally by training/ (Phase 2) and is never
+# committed — only the provenance record of what was fetched and under what
+# license is tracked (see PROVENANCE.jsonl and README.md in this directory).
+*
+!.gitignore
+!README.md
+!PROVENANCE.jsonl

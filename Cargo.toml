@@ -1,0 +1,19 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/beat-dsp",
+    "crates/beat-model",
+    "crates/beat-wasm",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/jono-tho-ra/beat_recognizer"
+
+# Applies to all workspace members; keeps the beat-wasm release build small
+# per the size budget in docs/WASM_BEAT_MODULE_SPEC.md §5.
+[profile.release]
+opt-level = "s"
+lto = true

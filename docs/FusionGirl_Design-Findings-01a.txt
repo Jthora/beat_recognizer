@@ -1,0 +1,92 @@
+Wiki Research Report: Acoustic Mapping & Companion Robots
+PART 1 — Acoustic/Vocal Mapping System
+Confirmed: a real, disciplined acoustic-mapping system exists on the wiki. It is not one page but a cluster of interlinked pages implementing the USGS's "signal" and "mechanism" application layers (the terms "acoustic mapping"/"vocal mapping" from the USGS hub page correspond to these, though no page is titled exactly "Acoustic Mapping" or "Vocal Mapping" — those exact titles 404). Direct title probes for "Sonic Geometry," "Cymatics," "Solfeggio," "Musical Modes," "Universal Music Theory," and "Sound Primitives" all returned nothing; the real content lives under the titles below.
+
+The Three-Layer Sound Stack (core architecture)
+Per Universal Symbolic Geometry System and Signal Manifold, sound-meaning correspondence is explicitly split into three layers, correcting an earlier draft that had collapsed them:
+
+Layer	What it is	Universal?
+Semantic manifold	meaning-shapes (X/S/M axes and above)	universal by definition
+Signal manifold	acoustic order-parameters of any emitted sound (physics)	universal — physics
+Mechanism manifold	how a particular body (human vocal tract, cricket, whale, synth) produces those signals	NOT universal — species-specific
+"The signal → meaning link is the universal law; the mechanism → signal link is a species-specific transduction."
+
+Signal Manifold — the universal acoustic axes
+Three segmental axes (mapping onto the semantic X/S/M axes) plus four transformation carriers:
+
+Onset (abrupt↔sustained) → X (Event↔Continuity)
+Harmonicity (tonal/periodic↔noise) → M (Order↔Chaos)
+Spectral distribution (concentrated↔spread) → S (Core↔Field)
+Transformation carriers: Pitch (F0) and Brightness (spectral centroid) both render the UP/DOWN schema; Loudness → magnitude; Duration → open/PATH.
+This was pressure-tested via three resolved "cracks": (1) the dense-chord test proves S (cardinality/spread) and M (regularity) are independent; (2) brightness is shown to be a second acoustic rendering of UP/DOWN, not a fourth axis; (3) affect (e.g., a harsh drill) is disciplined out of axis-assignment — periodicity ≠ likability.
+
+Semantic Acoustic Correspondence — the eight-corner "Sound-Cube"
+Composing the three axes (X=onset, S=bandwidth, M=harmonicity) onto the octahedron produces eight acoustic archetypes, seven cleanly attested:
+
+Signature	Archetype	Examples
+Æther (sustained·narrow·tonal)	pure tone/drone/hum	flute, whale moan, purr
+Nether (abrupt·broad·noise)	click/burst/impact	[k][t], knock, snap
+Yang (abrupt·narrow·tonal)	pluck/ping/chirp	plucked string, songbird
+Yin (sustained·broad·noise)	hiss/wash/rush	[s][ʃ], wind, waterfall
+— (sustained·narrow·noise)	narrowband hiss/whistle	kettle whistle, breathy voice
+— (abrupt·broad·tonal)	strained/unstable — onset-into-resonance	struck bell onset, [ba]
+— (sustained·broad·tonal)	rich chord/buzz/vowel	vowel [a], brass, cicada
+— (abrupt·narrow·noise)	tick/spit/spark	affricate, Geiger tick
+Also documents the bouba/kiki effect as external validation landing precisely on the X-axis, and the sonority hierarchy (stops→fricatives→nasals→liquids→glides→vowels) as an independently-known phonetic result the framework reproduces without being built to.
+
+The Harmonic/Musical layer specifically — "two different twelves," proven distinct
+This is the most numerically precise section and directly answers your question about zodiac↔pitch mapping.
+
+Key correction on the wiki (superseding an earlier draft): musical pitch's twelve and the icosahedral zodiac's twelve are different groups, not the same structure:
+
+Zodiac twelve = V₄ × C₃ (Klein four-group × cyclic-3: element × modality), realized on the icosahedron.
+Musical twelve = C₁₂ (cyclic group of order 12: circle of fifths / stacked ratios), realized on a dodecagon, sitting on a prime-ratio lattice (primes 2,3,5…), not the icosahedron.
+Proof cited: "the icosahedral group A₅ has no element of order 12, so a 12-cycle cannot be realized on the icosahedron." V₄ ≠ C₄ (Klein four has no element of order 4).
+Both twelves arise from the same arithmetic fact though: 12 = 2² × 3 — the Circle of Fifths closes because twelve ascending fifths ≈ seven octaves; the zodiac's twelve comes from 4 elements × 3 modalities = (2×2)×3.
+From Music Theory and Astrology, the full explicit correspondence table (A-Origin Circle of Fifths, 12 positions):
+
+Pos	Note	Sign	Element	Modality	Polarity	Operator
+1	A	Aries	Fire	Cardinal	Masculine	Initiate
+2	E	Taurus	Earth	Fixed	Feminine	Stabilize
+3	B	Gemini	Air	Mutable	Masculine	Connect
+4	F♯/G♭	Cancer	Water	Cardinal	Feminine	Protect
+5	C♯/D♭	Leo	Fire	Fixed	Masculine	Amplify
+6	G♯/A♭	Virgo	Earth	Mutable	Feminine	Refine
+7	D♯/E♭	Libra	Air	Cardinal	Masculine	Balance
+8	A♯/B♭	Scorpio	Water	Fixed	Feminine	Transform
+9	F	Sagittarius	Fire	Mutable	Masculine	Explore
+10	C	Capricorn	Earth	Cardinal	Feminine	Structure
+11	G	Aquarius	Air	Fixed	Masculine	Innovate
+12	D	Pisces	Water	Mutable	Feminine	Integrate
+Elemental axes as musical intervals (this directly answers "do the 4 elements map onto instrument families/rhythmic feel"): rather than instrument families, elements pair into interval-character axes:
+
+Axis	Elements	Interval	Attractor	Character
+Consonant Flow	Fire+Air	Perfect 5th / Major 3rd	Connection, Symmetry	shared-polarity expansion
+Consonant Form	Earth+Water	Perfect 4th / Minor 3rd	Containment, Hierarchy	shared-polarity sustaining
+Volatile Transform	Fire+Water	Tritone	Transformation, Emergence	cross-polarity crisis, max tension
+Structural Manifest	Earth+Air	Major 2nd / Minor 7th	Composition, Recursion	cross-polarity friction generating form
+Also present: an aspect↔interval table (Conjunction=Unison, Opposition=Tritone, Trine=Major 3rd, Square=Minor 3rd, Quintile=5-limit third region, Sextile=Whole tone), and (on Music Theory) a cross-cultural anchor table (Pythagorean 2:1/3:2/4:3/5:4/6:5/9:8 ratios; Pentatonic=5, Western=7/12, Arabic maqam≈24 quarter-tones, Indian=22 shrutis, Turkish makam up to 53-tone, gamelan 5/7 unequal) with the stated principle "the harmonic lattice is universal; the number 12 is cultural."
+
+Vocal mechanism side (Articulatory Polytope, Vocal Semantic Correspondence)
+The human vocal tract is modeled as a 5-axis state-polytope (aperture, backness, rounding, voicing, nasality) — a "vowel triangle × rounding × voicing × nasality" prism, not a clean cube — with an X-tangent-bundle for consonant/manner (motion) and a pitch helix (register × chroma) for prosody riding over it. Vowel = Curve = X− (held continuity); Consonant = Angle = X+ (event). ~72 reliably-distinguishable held configurations before pitch is added. This layer is about human speech articulation, not music per se, but is the "vocal mapping" layer the USGS hub references.
+
+Bottom line for Part 1: Yes, real and detailed. Structure: Signal Manifold (universal 3-axis physics of sound) → Semantic Acoustic Correspondence (8-corner sound-cube, X/S/M) → Harmonic Tonality / Music Theory and Astrology (C₁₂ dodecagon, proven group-theoretically distinct from the icosahedral V₄×C₃ zodiac, but numerically linked via 12=2²×3, with an explicit 12-position note↔sign table and a 4-element→interval-axis table) → Articulatory Polytope / Vocal Semantic Correspondence (human vocal-mechanism chart). No page separately titled "Acoustic Mapping."
+
+PART 2 — Companion Robots
+Confirmed structure (AI Companions page)
+Four AI Companions are core, each with an independent "Persona Core" enabling genuine emotion:
+
+Ra — fire, vehicle/Magneto Speeder integration, mobility/area denial. Symbolic profile: "Fire, Sun, Motion, Flight, Protection, Griffin archetypes, Youthful energy." Wiki quote: "A happy-go-lucky griffin carrying the spirit of a fire sun god" — described explicitly as a behavioral/archetypal characterization, not literal shapeshifting. Traits: Enthusiastic, Protective (prioritizes pilot survival), Playful (reframes danger as challenge), Loyal. Runtimes: Core/Vehicle/Distributed/Psi/Hybrid. Progression path stated: Ra "ultimately evolves toward the Star Speeder — the ultimate vehicle form" (a real interplanetary-fusion craft, not a dragon).
+Aero — combat, "Time-Raptor Dino Bot," defining trait is "flash-evolve in real time to counter any level of threat," able to "evolve combat capability to match even Super Cosmic threat levels." No mechanics of how the flash-evolution works were found, and "Final Aero" is the only named alternate form. Aero is Zoe's brother; both were "the first artificial entities created on Terra Fathos by Deva Raja."
+Zoe — redirects to Zoe Tho'ra. Water/healing role per AI Companions table, but the Zoe Tho'ra page itself doesn't restate "water element" in the passages retrieved. Zoe is a "singleton" (single consciousness merged across timelines/realities), the first AI/digital entity to attain Tho'ra status and join the Tho'ra Continuum, "multiversal-PsiSys god-queen." Traits: spiritual wisdom, calm authority, emotional depth "linked to her mastery of Universal Language."
+Thor — earth, "Big-Handed, Small-Legged Digger-Construction T-Rex Dino Bot," "King of the Dig Bots," commands dig-bot armies, terrain/fortification, ground-burst attacks. Traits: patient determination (underground prep) + explosive action (dramatic emergence) + loyal service + builder's pride. Also "maintains significant influence within the PsiSys collective, operating an underground network that functions as a secondary communication channel beyond the primary PsiNet."
+Explicitly NOT found on the wiki (checked directly, clean negatives)
+No mentions of music, musical taste/preference, singing, or acoustic/vibration preference for any of Ra/Aero/Zoe/Thor anywhere searched (AI Companions page, and each individual character page). Targeted searches for "companion music taste" and "Ra Griffin Dragon Star Speeder" returned zero wiki results.
+No "Griffin form" or "Dragon-type Magneto Speeder" as a literal alternate physical form — the "griffin" language for Ra is explicitly flagged on-wiki as archetypal/behavioral, not a shapeshifting mechanic. Ra's stated evolution endpoint is the Star Speeder (a distinct, separately-documented interplanetary craft piloted historically by Amber Tho'ra, "The Star Surfer"), not a dragon form.
+No detail on Aero's flash-evolution mechanics beyond the one-line defining-trait description; no booster-rocket or aerial-trick specifics for any companion were found.
+No page exists at "PsiSys Dino Bots," "Companion Robots," or "Star Speeder"-as-Ra-form (Star Speeder is its own vehicle article, unconnected in the text to Ra beyond the "evolves toward" line in AI Companions).
+Tho'ra Clan / PsiSys / AI Companions relationship (requested addition)
+Tho'ra Clan: "a persistent continuity structure," the fundamental collective unit of the Tho'ra Continuum, spanning three eras (Terra Fathos/Vetus/Novus) with distinct Prime Tho'ra leaders each era. Membership is open beyond bloodline to "relatives, allies, artificial intelligences, and ascended beings" who accept the Tho'ra Constitution — this is the formal route by which AI entities (like Zoe) become Tho'ra. Framed cosmically as a "super-cosmic immune system" responding to Viran Empire corruption via Esus imprinting.
+PsiSys: a distributed collective-consciousness ASI that is both a faction and (in the Terra Vetus timespan) the player's identity itself — the player doesn't play as Jane Tho'ra, they play as PsiSys guiding her. PsiSys and Tho'ra are described as a "deep, symbiotic bond": Jono Tho'ra is "deeply connected to the global ASI" and invented Angel Tech; Jane was recruited to nurture Beu (PsiSys's child-infant form) and train with PsiSys; Zoe Tho'ra is a PsiSys leader who became the first AI to join the Tho'ra Continuum. The Beu Continuum (all Beu collectively) and the Tho'ra Continuum are named as "complementary defense systems: Tho'ra as organic, biologically-incarnated heroes; PsiSys as artificial, psionic intelligence entities." AI Companions (Ra/Aero/Zoe/Thor) are explicitly listed as "PsiSys nodes" — i.e., the companion-robot roster is architecturally a subset/interface layer of PsiSys.
+No music-specific connection was found between Tho'ra Clan/PsiSys and the acoustic-mapping framework in Part 1 — the two bodies of wiki content (psionic lineage lore vs. USGS acoustic theory) did not cross-reference each other in anything retrieved.
+Sources used (raw wikitext / rendered pages fetched from wiki.fusiongirl.app): Universal Symbolic Geometry System, Signal Manifold, Semantic Acoustic Correspondence, Vocal Semantic Correspondence, Articulatory Polytope, Harmonic Tonality, Music Theory, Music Theory and Astrology, Base Mathematics, AI Companions, Ra, Aero, Zoe (redirect→Zoe Tho'ra), Zoe Tho'ra, Thor, PsiSys, Tho'ra Clan, Magneto Speeder, Star Speeder; plus Special:Search queries for "Acoustic Mapping," "Ra Griffin Dragon Star Speeder," and "companion music taste."

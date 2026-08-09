@@ -1,0 +1,21 @@
+[project]
+name = "beat-recognizer-training"
+version = "0.1.0"
+description = "Training pipeline for the beat_recognizer WASM module's learned front-end"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Jordan Trana [Jono Tho'ra]", email = "jordan.trana@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "torch>=2.4",
+    "torchaudio>=2.4",
+    "mir_eval>=0.7",
+    "numpy>=1.26",
+    "requests>=2.32",
+]
+
+[build-system]
+requires = ["uv_build>=0.12.3,<0.13.0"]
+build-backend = "uv_build"

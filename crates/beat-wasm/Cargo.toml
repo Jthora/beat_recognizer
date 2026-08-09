@@ -1,0 +1,15 @@
+[package]
+name = "beat-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+beat-dsp = { path = "../beat-dsp" }
+wasm-bindgen = "0.2"
+
+# TODO(Phase 7): depend on beat-model once trained weights exist, to combine
+# the learned activation curve with beat-dsp's deterministic tracking layer.

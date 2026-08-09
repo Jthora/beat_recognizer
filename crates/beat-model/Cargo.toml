@@ -1,0 +1,12 @@
+[package]
+name = "beat-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+beat-dsp = { path = "../beat-dsp" }
+
+# TODO(Phase 7): add `tract-onnx` here once trained weights exist, to load
+# the exported causal-TCN front-end and produce the learned activation curve
+# that beat-dsp's deterministic layer then tracks tempo/phase over.

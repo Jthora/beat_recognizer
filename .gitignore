@@ -1,0 +1,16 @@
+# Rust
+/target/
+crates/*/target/
+
+# TypeScript / Node
+node_modules/
+ts/dist/
+ts/wasm/
+
+# Python (training/)
+training/.venv/
+training/**/__pycache__/
+*.pyc
+
+# OS
+.DS_Store
