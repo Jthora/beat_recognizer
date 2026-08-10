@@ -179,10 +179,9 @@ def classify_license(track: FmaTrack) -> str | None:
         if not version_match:
             return None  # can't confirm a version — reject, don't guess
         version = version_match.group(1)
-        if f"CC-BY-{version}" not in provenance.ALLOWED_LICENSES:
-            return None  # an unrecognized/non-standard version string
         is_sharealike = "share alike" in raw_lower or "sharealike" in raw_lower
-        return f"CC-BY-SA-{version}" if is_sharealike else f"CC-BY-{version}"
+        tag = f"CC-BY-SA-{version}" if is_sharealike else f"CC-BY-{version}"
+        return tag if provenance.is_allowed(tag) else None
 
     return None
 
@@ -235,27 +234,40 @@ def download_audio_tier(
     clean_by_suffix = {_fma_relative_path(t.track_id): t for t in clean_tracks}
     audio_dir = dest_dir / "audio"
     audio_dir.mkdir(parents=True, exist_ok=True)
+    already_logged = provenance.load_logged_paths(manifest_path)
 
     extracted = 0
+    skipped_existing = 0
+    failed = 0
     with zipfile.ZipFile(zip_path) as zf:
         for member in zf.namelist():
             for suffix, track in clean_by_suffix.items():
                 if member.endswith(suffix):
                     out_path = audio_dir / suffix.replace("/", "_")
-                    if not out_path.exists():
-                        with zf.open(member) as src, out_path.open("wb") as dst:
-                            dst.write(src.read())
-                    provenance.append_entry(
-                        manifest_path,
-                        file_path=out_path,
-                        source_url=f"{AUDIO_TIER_URLS[tier]}#{member}",
-                        license=classify_license(track),  # type: ignore[arg-type]
-                        source_dataset=f"fma_{tier}",
-                    )
-                    extracted += 1
+                    if str(out_path) in already_logged:
+                        skipped_existing += 1
+                        break
+                    try:
+                        if not out_path.exists():
+                            with zf.open(member) as src, out_path.open("wb") as dst:
+                                dst.write(src.read())
+                        provenance.append_entry(
+                            manifest_path,
+                            file_path=out_path,
+                            source_url=f"{AUDIO_TIER_URLS[tier]}#{member}",
+                            license=classify_license(track),  # type: ignore[arg-type]
+                            source_dataset=f"fma_{tier}",
+                        )
+                        extracted += 1
+                    except (OSError, zipfile.BadZipFile, ValueError) as e:
+                        print(f"  skipping {member} after error: {e}")
+                        failed += 1
                     break
 
-    print(f"Extracted {extracted} clean tracks from fma_{tier}.zip into {audio_dir}")
+    print(
+        f"Extracted {extracted} clean tracks from fma_{tier}.zip into {audio_dir} "
+        f"({skipped_existing} already done, {failed} failed and were skipped)"
+    )
 
 
 def _download(url: str, dest: Path) -> None:

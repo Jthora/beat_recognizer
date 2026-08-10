@@ -8,6 +8,7 @@ def make_track(license_ccurl: str, **kwargs) -> JamendoTrack:
         license_ccurl=license_ccurl,
         audiodownload=kwargs.get("audiodownload", "https://example.com/a.mp3"),
         audiodownload_allowed=kwargs.get("audiodownload_allowed", True),
+        duration_s=kwargs.get("duration_s", 200),
     )
 
 

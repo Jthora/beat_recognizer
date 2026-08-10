@@ -16,6 +16,7 @@ module can run without it.
 from __future__ import annotations
 
 import os
+import time
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,28 @@ from . import provenance
 
 API_URL = "https://api.jamendo.com/v3.0/tracks/"
 PAGE_LIMIT = 200  # Jamendo's documented max per request
+PAGE_DELAY_S = 0.3  # pacing between pagination requests, to avoid tripping
+# the rate limit in the first place rather than just reacting to it
+MAX_RETRIES = 5
+
+
+def _get_with_retry(url: str, params: dict, timeout: int = 30) -> requests.Response:
+    """GET with retry/backoff on 429 — pulling ~25,000 tracks across ~125
+    pages tripped Jamendo's rate limit on a real run with no retry logic at
+    all; confirmed live, not a hypothetical edge case."""
+    delay = 1.0
+    for attempt in range(MAX_RETRIES + 1):
+        resp = requests.get(url, params=params, timeout=timeout)
+        if resp.status_code == 429 and attempt < MAX_RETRIES:
+            retry_after = resp.headers.get("Retry-After")
+            wait = float(retry_after) if retry_after else delay
+            print(f"  rate limited, waiting {wait:.1f}s (attempt {attempt + 1}/{MAX_RETRIES})")
+            time.sleep(wait)
+            delay *= 2
+            continue
+        resp.raise_for_status()
+        return resp
+    raise RuntimeError("unreachable")  # loop always returns or raises above
 
 
 @dataclass(frozen=True)
@@ -35,6 +58,7 @@ class JamendoTrack:
     license_ccurl: str
     audiodownload: str
     audiodownload_allowed: bool
+    duration_s: int
 
 
 def fetch_tracks(client_id: str, max_tracks: int = 2000) -> list[JamendoTrack]:
@@ -43,7 +67,7 @@ def fetch_tracks(client_id: str, max_tracks: int = 2000) -> list[JamendoTrack]:
     tracks: list[JamendoTrack] = []
     offset = 0
     while len(tracks) < max_tracks:
-        resp = requests.get(
+        resp = _get_with_retry(
             API_URL,
             params={
                 "client_id": client_id,
@@ -53,9 +77,7 @@ def fetch_tracks(client_id: str, max_tracks: int = 2000) -> list[JamendoTrack]:
                 "include": "licenses",
                 "audioformat": "mp32",
             },
-            timeout=30,
         )
-        resp.raise_for_status()
         payload = resp.json()
 
         if payload.get("headers", {}).get("status") == "failed":
@@ -73,11 +95,13 @@ def fetch_tracks(client_id: str, max_tracks: int = 2000) -> list[JamendoTrack]:
                     license_ccurl=t.get("license_ccurl", ""),
                     audiodownload=t.get("audiodownload", ""),
                     audiodownload_allowed=bool(t.get("audiodownload_allowed", False)),
+                    duration_s=int(t.get("duration", 0)),
                 )
             )
         offset += len(results)
         if len(results) < PAGE_LIMIT:
             break  # last page
+        time.sleep(PAGE_DELAY_S)
 
     return tracks
 
@@ -105,12 +129,18 @@ def report_license_distribution(tracks: list[JamendoTrack]) -> None:
 
     clean = [t for t in tracks if classify_license(t)]
     clean_and_downloadable = [t for t in clean if t.audiodownload_allowed and t.audiodownload]
+    clean_hours = sum(t.duration_s for t in clean_and_downloadable) / 3600
+    yield_rate = len(clean_and_downloadable) / len(tracks) if tracks else 0
     print(
         f"\n{len(clean)} / {len(tracks)} tracks are commercial-use-clean; "
         f"{len(clean_and_downloadable)} of those have audiodownload_allowed "
         "and an actual download URL (license and download permission are "
         "separate things — a clean license doesn't guarantee the API can "
-        "hand you the audio)."
+        f"hand you the audio).\n{clean_hours:.1f} hours of downloadable clean "
+        f"audio in this sample ({yield_rate:.1%} yield) — at this rate, "
+        f"reaching N hours needs roughly querying ~{1 / yield_rate:.0f}x as "
+        "many tracks as hours-equivalent needed, given Jamendo's catalog "
+        "is far larger than this sample."
     )
 
 
@@ -121,9 +151,19 @@ def download_clean_tracks(
 ) -> None:
     """Downloads audio for every track that is both license-clean and has
     audiodownload_allowed. This is the step with real bandwidth/time cost —
-    call it only after reviewing report_license_distribution's output."""
+    call it only after reviewing report_license_distribution's output.
+
+    Resumable and fault-tolerant: skips files already recorded in the
+    manifest (so re-running after an interruption doesn't re-download or
+    double-log), and a single track's download failure is logged and
+    skipped rather than aborting the whole batch — a real 500 from
+    Jamendo's storage backend on one track (out of ~1000) killed an entire
+    run before this existed."""
     dest_dir.mkdir(parents=True, exist_ok=True)
+    already_logged = provenance.load_logged_paths(manifest_path)
     downloaded = 0
+    skipped_existing = 0
+    failed = 0
 
     for t in tracks:
         license_tag = classify_license(t)
@@ -131,21 +171,31 @@ def download_clean_tracks(
             continue
 
         out_path = dest_dir / f"{t.track_id}.mp3"
-        if not out_path.exists():
-            resp = requests.get(t.audiodownload, timeout=60)
-            resp.raise_for_status()
-            out_path.write_bytes(resp.content)
+        if str(out_path) in already_logged:
+            skipped_existing += 1
+            continue
 
-        provenance.append_entry(
-            manifest_path,
-            file_path=out_path,
-            source_url=t.audiodownload,
-            license=license_tag,
-            source_dataset="jamendo",
-        )
-        downloaded += 1
+        try:
+            if not out_path.exists():
+                resp = _get_with_retry(t.audiodownload, params={}, timeout=60)
+                out_path.write_bytes(resp.content)
 
-    print(f"Downloaded {downloaded} clean tracks into {dest_dir}")
+            provenance.append_entry(
+                manifest_path,
+                file_path=out_path,
+                source_url=t.audiodownload,
+                license=license_tag,
+                source_dataset="jamendo",
+            )
+            downloaded += 1
+        except (requests.exceptions.RequestException, ValueError) as e:
+            print(f"  skipping track {t.track_id} after error: {e}")
+            failed += 1
+
+    print(
+        f"Downloaded {downloaded} clean tracks into {dest_dir} "
+        f"({skipped_existing} already done, {failed} failed and were skipped)"
+    )
 
 
 if __name__ == "__main__":
