@@ -99,11 +99,21 @@ integration is a drop-in, not a translation layer:
 
 ```typescript
 export interface BeatEstimate {
+  hasRhythm: boolean;        // false = no discernible rhythm (silence, noise,
+                              // not enough history yet) — distinct from a
+                              // detected-but-low confidence; ignore the rest
+                              // of the fields when false. Added per
+                              // WASM_BEAT_MODULE_ENHANCEMENTS.md §2.
   bpm: number;
   beatPhase: number;        // 0–1, progress toward the next beat
   confidence: number;       // 0–1
-  nextBeatTimeMs: number;   // predicted timestamp of the next beat
+  nextBeatTimeMs: number;   // ms since construction/reset, not wall-clock —
+                              // caller adds its own AudioContext.currentTime
+                              // offset (see ENHANCEMENTS.md §5)
   isDownbeat?: boolean;     // optional, if downbeat detection is implemented
+  alternateBpm?: number;         // the other tempo-octave candidate (e.g. 76
+  alternateConfidence?: number;  // vs 152 BPM), present only when genuinely
+                                   // ambiguous. Added per ENHANCEMENTS.md §2.
 }
 
 export interface BeatRecognizer {
@@ -120,7 +130,9 @@ export interface BeatRecognizer {
 
 Exact naming can flex — the shape (streaming feed + pull-or-callback read, a
 distinct offline path, confidence on every estimate, explicit reset) is what
-matters for a clean integration.
+matters for a clean integration. `hasRhythm` and the `alternate*` fields were
+added after the original v1 pass, per `WASM_BEAT_MODULE_ENHANCEMENTS.md` §2 —
+both additive, neither changes the meaning of the original fields.
 
 ---
 

@@ -85,6 +85,9 @@ pub fn track_beats_dp(envelope: &[f32], target_period_frames: f32, alpha: f32) -
 pub struct OfflineResult {
     pub bpm: f32,
     pub confidence: f32,
+    /// The other tempo-octave candidate, when the global tempo estimate is
+    /// genuinely ambiguous — see `tempo::TempoEstimate::alternate`.
+    pub alternate: Option<tempo::AlternateTempo>,
     /// Onset-envelope frame indices of each detected beat, chronological.
     pub beat_frames: Vec<usize>,
 }
@@ -98,6 +101,7 @@ pub fn analyze(envelope: &[f32], hop_ms: f64) -> Option<OfflineResult> {
     Some(OfflineResult {
         bpm: tempo_est.bpm,
         confidence: tempo_est.confidence,
+        alternate: tempo_est.alternate,
         beat_frames,
     })
 }

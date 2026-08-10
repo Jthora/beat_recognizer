@@ -15,6 +15,11 @@ pub struct BeatEstimate {
 
 #[wasm_bindgen]
 impl BeatEstimate {
+    #[wasm_bindgen(getter, js_name = hasRhythm)]
+    pub fn has_rhythm(&self) -> bool {
+        self.inner.has_rhythm
+    }
+
     #[wasm_bindgen(getter)]
     pub fn bpm(&self) -> f32 {
         self.inner.bpm
@@ -38,6 +43,16 @@ impl BeatEstimate {
     #[wasm_bindgen(getter, js_name = isDownbeat)]
     pub fn is_downbeat(&self) -> Option<bool> {
         self.inner.is_downbeat
+    }
+
+    #[wasm_bindgen(getter, js_name = alternateBpm)]
+    pub fn alternate_bpm(&self) -> Option<f32> {
+        self.inner.alternate_bpm
+    }
+
+    #[wasm_bindgen(getter, js_name = alternateConfidence)]
+    pub fn alternate_confidence(&self) -> Option<f32> {
+        self.inner.alternate_confidence
     }
 }
 

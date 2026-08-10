@@ -13,6 +13,20 @@ pub struct TempoEstimate {
     pub bpm: f32,
     /// Normalized comb-filter peak salience, roughly in [0, 1].
     pub confidence: f32,
+    /// The other tempo-octave candidate (2x or 0.5x `bpm`), populated only
+    /// when it scores close enough to `confidence` to be a genuine
+    /// ambiguity rather than a clearly-inferior runner-up. Real, common
+    /// music-tempo phenomenon (is a track 76 or 152 BPM?), not an
+    /// estimation failure — exposed rather than silently resolved so a
+    /// consumer can pick whichever octave fits its own context.
+    pub alternate: Option<AlternateTempo>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AlternateTempo {
+    pub period_frames: f32,
+    pub bpm: f32,
+    pub confidence: f32,
 }
 
 /// Estimates the dominant periodicity of `envelope` (one onset-strength
@@ -115,10 +129,31 @@ pub fn estimate_tempo(
         }
     }
 
+    // Octave-alternate: check both the double and half of the chosen period
+    // (symmetric, since ambiguity can present with either octave winning
+    // the primary slot) using the same scores already computed above — this
+    // really is close to free, just reusing `score_at`, no new estimation
+    // pass. Only exposed if it's a genuine near-tie with the chosen answer,
+    // not merely "also plausible but clearly worse."
+    const ALTERNATE_TOLERANCE: f32 = 0.85; // fraction of the chosen score
+    let alt_threshold = chosen.1 * ALTERNATE_TOLERANCE;
+    let alternate = [chosen.0 * 2, chosen.0 / 2]
+        .into_iter()
+        .filter(|&lag| lag != chosen.0)
+        .filter_map(|lag| score_at(lag).map(|s| (lag, s)))
+        .filter(|&(_, s)| s >= alt_threshold)
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .map(|(lag, score)| AlternateTempo {
+            period_frames: lag as f32,
+            bpm: (60_000.0 / (lag as f64 * hop_ms)) as f32,
+            confidence: score.clamp(0.0, 1.0),
+        });
+
     Some(TempoEstimate {
         period_frames: chosen.0 as f32,
         bpm: (60_000.0 / (chosen.0 as f64 * hop_ms)) as f32,
         confidence: chosen.1.clamp(0.0, 1.0),
+        alternate,
     })
 }
 
@@ -240,5 +275,72 @@ mod tests {
         // Shorter than even the fastest candidate period (300 BPM) needs.
         let env = click_envelope(5, 2);
         assert!(estimate_tempo(&env, hop_ms, DEFAULT_BPM_MIN, DEFAULT_BPM_MAX).is_none());
+    }
+
+    /// A backbeat-style envelope: every other pulse at `weak_amplitude`
+    /// instead of full strength — a real, common source of tempo-octave
+    /// ambiguity in actual music (e.g. a snare landing on every beat but
+    /// accented every second one). A perfectly uniform click train doesn't
+    /// serve as an "unambiguous" baseline here: an idealized delta train is
+    /// mathematically self-similar at every integer multiple of its period
+    /// (autocorrelation ties at ~1.0 for both the fundamental and its
+    /// octave), so it's actually the *most* ambiguous case, not the least —
+    /// confirmed empirically during development, not assumed. Real
+    /// unambiguity comes from the amplitude *pattern* itself favoring one
+    /// period over its octave, which is what varying `weak_amplitude` does.
+    fn backbeat_envelope(period: usize, n_beats: usize, weak_amplitude: f32) -> Vec<f32> {
+        let mut env = vec![0.0f32; period * n_beats];
+        for beat in 0..n_beats {
+            env[beat * period] = if beat % 2 == 0 { 1.0 } else { weak_amplitude };
+        }
+        env
+    }
+
+    #[test]
+    fn strong_amplitude_asymmetry_resolves_without_an_alternate() {
+        let hop_ms = 512.0 / 44_100.0 * 1000.0;
+        let period = period_frames_for_bpm(150.0, hop_ms).round() as usize;
+        // Weak pulses at 40% amplitude: enough of a difference that the
+        // octave with only the strong pulses is clearly the better
+        // explanation, not just a near-tie.
+        let env = backbeat_envelope(period, 24, 0.4);
+
+        let est = estimate_tempo(&env, hop_ms, DEFAULT_BPM_MIN, DEFAULT_BPM_MAX).unwrap();
+        assert!(
+            est.alternate.is_none(),
+            "expected no alternate once amplitude asymmetry clearly favors one octave, got {:?}",
+            est.alternate
+        );
+    }
+
+    #[test]
+    fn genuinely_ambiguous_tempo_exposes_an_alternate() {
+        let hop_ms = 512.0 / 44_100.0 * 1000.0;
+        let period = period_frames_for_bpm(150.0, hop_ms).round() as usize;
+        // Weak pulses at 90% amplitude: close enough to full strength that
+        // both the fundamental and its octave remain plausible.
+        let env = backbeat_envelope(period, 24, 0.9);
+
+        let est = estimate_tempo(&env, hop_ms, DEFAULT_BPM_MIN, DEFAULT_BPM_MAX).unwrap();
+        let alt = est
+            .alternate
+            .unwrap_or_else(|| panic!("expected an alternate hypothesis, got {est:?}"));
+
+        let ratio = est.bpm / alt.bpm;
+        assert!(
+            (ratio - 2.0).abs() < 0.1 || (ratio - 0.5).abs() < 0.05,
+            "expected the alternate to be the other octave, got ratio {ratio} ({} vs {})",
+            est.bpm,
+            alt.bpm
+        );
+        // `chosen` is picked by a smaller-period *preference* among
+        // near-tied candidates, not a strict argmax, so the alternate can
+        // legitimately score at or above the chosen answer's own
+        // confidence — only its existence and rough magnitude matter here.
+        assert!(
+            alt.confidence > 0.5,
+            "expected a real alternate score, got {}",
+            alt.confidence
+        );
     }
 }

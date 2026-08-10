@@ -18,9 +18,21 @@ use std::collections::VecDeque;
 /// tracker to have real history to weigh.
 const MAX_HISTORY_SECONDS: f64 = 8.0;
 
-/// Mirrors the `BeatEstimate` shape from `docs/WASM_BEAT_MODULE_SPEC.md` §4.
+/// Mirrors the `BeatEstimate` shape from `docs/WASM_BEAT_MODULE_SPEC.md` §4,
+/// extended per `docs/WASM_BEAT_MODULE_ENHANCEMENTS.md` §2 with an explicit
+/// no-rhythm state and octave-alternate exposure — both additive, neither
+/// changes the original fields' meaning.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BeatEstimate {
+    /// Whether any periodicity was detected at all. `false` means "no
+    /// discernible rhythm" — silence, talk radio, pure noise, or simply not
+    /// enough history yet — a state distinct from "detected, but low
+    /// confidence," which `confidence` alone can't disambiguate (a caller
+    /// can't tell 0.0 apart from "barely detected" otherwise). When
+    /// `false`, `bpm`/`beat_phase`/`confidence`/`alternate_*` are
+    /// meaningless and should be ignored, not treated as a low-quality
+    /// reading.
+    pub has_rhythm: bool,
     pub bpm: f32,
     pub beat_phase: f32,
     pub confidence: f32,
@@ -30,19 +42,29 @@ pub struct BeatEstimate {
     /// at the moment `reset()` was called).
     pub next_beat_time_ms: f64,
     pub is_downbeat: Option<bool>,
+    /// The other tempo-octave candidate (e.g. 76 vs 152 BPM), present only
+    /// when genuinely ambiguous — see `tempo::TempoEstimate::alternate`.
+    /// Flattened into two `Option<f32>`s rather than a nested struct so
+    /// this maps cleanly onto wasm-bindgen getters later.
+    pub alternate_bpm: Option<f32>,
+    pub alternate_confidence: Option<f32>,
 }
 
 impl Default for BeatEstimate {
-    /// Confidence 0.0 signals "no reading yet" rather than a guess — honest
-    /// uncertainty is the whole point (spec §6), including before any audio
-    /// has arrived or while there isn't enough history to trust a reading.
+    /// `has_rhythm: false` signals "no reading yet" rather than a guess —
+    /// honest uncertainty is the whole point (spec §6), including before
+    /// any audio has arrived or while there isn't enough history to trust
+    /// a reading.
     fn default() -> Self {
         Self {
+            has_rhythm: false,
             bpm: 0.0,
             beat_phase: 0.0,
             confidence: 0.0,
             next_beat_time_ms: 0.0,
             is_downbeat: None,
+            alternate_bpm: None,
+            alternate_confidence: None,
         }
     }
 }
@@ -114,21 +136,29 @@ impl DeterministicTracker {
 
         let now_ms = self.total_samples as f64 / self.sample_rate as f64 * 1000.0;
         let period = t.period_frames.round().max(1.0) as usize;
+        let alternate_bpm = t.alternate.map(|a| a.bpm);
+        let alternate_confidence = t.alternate.map(|a| a.confidence);
 
         self.current = match phase::estimate_phase(env, period, hop_ms) {
             Some(p) => BeatEstimate {
+                has_rhythm: true,
                 bpm: t.bpm,
                 beat_phase: p.beat_phase,
                 confidence: t.confidence,
                 next_beat_time_ms: now_ms + p.next_beat_offset_ms,
                 is_downbeat: None,
+                alternate_bpm,
+                alternate_confidence,
             },
             None => BeatEstimate {
+                has_rhythm: true,
                 bpm: t.bpm,
                 beat_phase: 0.0,
                 confidence: 0.0,
                 next_beat_time_ms: now_ms,
                 is_downbeat: None,
+                alternate_bpm,
+                alternate_confidence,
             },
         };
     }
@@ -149,16 +179,21 @@ impl DeterministicTracker {
         let Some(result) = offline::analyze(&envelope, hop_ms) else {
             return Vec::new();
         };
+        let alternate_bpm = result.alternate.map(|a| a.bpm);
+        let alternate_confidence = result.alternate.map(|a| a.confidence);
 
         result
             .beat_frames
             .into_iter()
             .map(|frame_idx| BeatEstimate {
+                has_rhythm: true,
                 bpm: result.bpm,
                 beat_phase: 0.0,
                 confidence: result.confidence,
                 next_beat_time_ms: frame_idx as f64 * hop_ms,
                 is_downbeat: None,
+                alternate_bpm,
+                alternate_confidence,
             })
             .collect()
     }
@@ -193,9 +228,26 @@ mod tests {
     }
 
     #[test]
-    fn fresh_tracker_reports_zero_confidence() {
+    fn fresh_tracker_reports_no_rhythm() {
         let tracker = DeterministicTracker::new();
-        assert_eq!(tracker.current_estimate().confidence, 0.0);
+        let est = tracker.current_estimate();
+        assert!(
+            !est.has_rhythm,
+            "fresh tracker should report no rhythm detected yet"
+        );
+        assert_eq!(est.confidence, 0.0);
+    }
+
+    #[test]
+    fn silence_reports_no_rhythm_not_low_confidence() {
+        let mut tracker = DeterministicTracker::new();
+        // Enough silent samples to complete several onset-detector hops.
+        tracker.process_chunk(&[0.0; 44_100], 44_100);
+        let est = tracker.current_estimate();
+        assert!(
+            !est.has_rhythm,
+            "silence should report no rhythm, not a low-confidence guess"
+        );
     }
 
     #[test]
@@ -218,6 +270,7 @@ mod tests {
         }
 
         let est = tracker.current_estimate();
+        assert!(est.has_rhythm, "expected rhythm to be detected");
         assert!(
             (est.bpm - target_bpm).abs() < 3.0,
             "expected ~{target_bpm} BPM, got {}",
@@ -240,6 +293,10 @@ mod tests {
         let estimates = tracker.analyze_offline(&track, sample_rate);
 
         assert!(!estimates.is_empty());
+        assert!(
+            estimates.iter().all(|e| e.has_rhythm),
+            "every detected beat should report has_rhythm"
+        );
         let avg_bpm: f32 = estimates.iter().map(|e| e.bpm).sum::<f32>() / estimates.len() as f32;
         assert!(
             (avg_bpm - target_bpm).abs() < 3.0,
