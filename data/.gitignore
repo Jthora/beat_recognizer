@@ -5,3 +5,5 @@
 !.gitignore
 !README.md
 !PROVENANCE.jsonl
+!CORPUS_HEALTH.jsonl
+!CORPUS_CHARACTERIZATION.md

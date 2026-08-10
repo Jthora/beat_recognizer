@@ -12,5 +12,11 @@ training/.venv/
 training/**/__pycache__/
 *.pyc
 
+# Eval-only audio (GiantSteps/SMC/etc.) -- downloaded on demand by
+# training/eval/fetch_eval_sets.py, never used for training, not committed.
+# No trailing slash: this is often a symlink to external storage locally,
+# and a directory-only pattern doesn't match a symlink entry.
+training/eval_data
+
 # OS
 .DS_Store

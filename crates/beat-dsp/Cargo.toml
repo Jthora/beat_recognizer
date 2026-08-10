@@ -6,3 +6,8 @@ license.workspace = true
 
 [dependencies]
 rustfft = "6"
+hound = "3"
+
+[[bin]]
+name = "beat-dsp-cli"
+path = "src/bin/cli.rs"

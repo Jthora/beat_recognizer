@@ -98,32 +98,46 @@ pub fn estimate_tempo(
     // come down to which one's true (non-integer) period happened to round
     // more cleanly to a whole number of hops — a real, unavoidable effect
     // of discretizing time, not just numerical noise, so it isn't fixable
-    // by peak interpolation alone (confirmed during development: a 100 BPM
-    // click track's true 103.36-frame period consistently scored lower
-    // than its double, 206.72 -> 207, by a wide, non-tie margin). The
-    // correction is the standard MIR approach: check whether a candidate's
-    // sub-harmonics (period / 2, /3, /4) also score reasonably well, and if
-    // so prefer the smallest one that does, on the prior that a shorter
-    // period is the more likely true beat unless the evidence clearly rules
-    // it out.
-    const SUBHARMONIC_TOLERANCE: f32 = 0.85; // fraction of the raw best score
-    let threshold = raw_best_score * SUBHARMONIC_TOLERANCE;
+    // by peak interpolation alone.
+    //
+    // The correction used to unconditionally prefer the *smallest* period
+    // among near-tied candidates (faster tempo), on the theory that was the
+    // more likely true beat. Measured against 664 real, annotated GiantSteps
+    // tracks, that one-directional bias turned out to be net-harmful: 35.6%
+    // of errors were "detected exactly 2x too fast" against only 20.3%
+    // "detected 2x too slow" — a real, lopsided asymmetry directly caused by
+    // always breaking ties toward the shorter period, not a wash.
+    //
+    // The fix is a bidirectional, principled tie-break instead of a
+    // one-directional heuristic: among all near-tied candidates (both
+    // sub-harmonics *and* harmonics of the raw best), prefer whichever is
+    // closest in log-tempo space to ~120 BPM — the well-documented human
+    // preferred-tempo center from tempo-perception research (Moelants 2002;
+    // McKinney & Moelants 2004), not a value fit to this one benchmark.
+    const NEAR_TIE_TOLERANCE: f32 = 0.85; // fraction of the raw best score
+    const PREFERRED_BPM_CENTER: f64 = 120.0;
+    let threshold = raw_best_score * NEAR_TIE_TOLERANCE;
     let score_at = |lag: usize| -> Option<f32> {
         lag.checked_sub(min_lag)
             .and_then(|i| scores.get(i))
             .map(|&(_, s)| s)
     };
+    let bpm_of = |lag: usize| -> f64 { 60_000.0 / (lag as f64 * hop_ms) };
+    let log_distance_from_center =
+        |lag: usize| -> f64 { (bpm_of(lag).log2() - PREFERRED_BPM_CENTER.log2()).abs() };
 
     let mut chosen = (raw_best_lag, raw_best_score);
-    for divisor in [2usize, 3, 4] {
-        let approx = raw_best_lag as f32 / divisor as f32;
+    for ratio in [1.0 / 4.0, 1.0 / 3.0, 1.0 / 2.0, 2.0, 3.0, 4.0] {
+        let approx = raw_best_lag as f32 * ratio;
         let window_lo = (approx.floor() as usize).saturating_sub(1);
         let window_hi = approx.ceil() as usize + 1;
         if let Some((cand_lag, cand_score)) = (window_lo..=window_hi)
             .filter_map(|lag| score_at(lag).map(|s| (lag, s)))
             .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
         {
-            if cand_score >= threshold && cand_lag < chosen.0 {
+            if cand_score >= threshold
+                && log_distance_from_center(cand_lag) < log_distance_from_center(chosen.0)
+            {
                 chosen = (cand_lag, cand_score);
             }
         }
@@ -208,6 +222,28 @@ mod tests {
         env
     }
 
+    /// Like `click_envelope`, but with small per-beat amplitude jitter
+    /// (deterministic PRNG, no external dependency) instead of a uniform
+    /// 1.0 at every beat. A perfectly uniform click train is mathematically
+    /// self-similar at *every* integer multiple of its period (no unique
+    /// answer to test against); a *regular alternating* amplitude pattern
+    /// (see `backbeat_envelope`) fixes that but introduces its own
+    /// competing sub-rhythm at 2x the period. Random per-beat jitter breaks
+    /// the exact-tie degeneracy without constructing any alternative
+    /// periodic hypothesis, so the true fundamental period stays the
+    /// unique, unambiguous winner — closer to how real timing imprecision
+    /// behaves than either of the other two fixtures.
+    fn jittered_click_envelope(period_frames: usize, n_beats: usize) -> Vec<f32> {
+        let mut env = vec![0.0f32; period_frames * n_beats];
+        let mut state: u32 = 0xC0FF_EE11;
+        for beat in 0..n_beats {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let jitter = (state >> 16) as f32 / 65535.0 * 0.15;
+            env[beat * period_frames] = 1.0 - jitter;
+        }
+        env
+    }
+
     #[test]
     fn recovers_known_period_from_clean_clicks() {
         let hop_ms = 512.0 / 44_100.0 * 1000.0;
@@ -229,10 +265,46 @@ mod tests {
 
     #[test]
     fn recovers_a_range_of_tempi() {
+        // Uses jittered_click_envelope, not a pure uniform click train: an
+        // idealized delta train is mathematically self-similar at *every*
+        // integer multiple of its period, so it has no uniquely correct
+        // octave to assert against -- least of all once the tie-break
+        // between near-tied octaves prefers whichever is perceptually more
+        // plausible (see the preferred-tempo-center comment above), which
+        // can legitimately differ from any single hardcoded target for a
+        // signal that's ambiguous by construction. (A regular alternating
+        // backbeat_envelope doesn't fix this either -- tried first, and it
+        // introduces its own competing 2x sub-rhythm strong enough to
+        // legitimately win instead, confirmed live: 90 BPM resolved to its
+        // own strong-beats-only sub-rhythm at 45 BPM.) Small per-beat
+        // jitter breaks the tie without adding a competing hypothesis.
+        //
+        // Capped at 160 BPM deliberately: swept 60-220 during development
+        // and found *every* value above ~165 resolves to its own half
+        // (170->86, 180->89, 200->99, ...), because at short periods (high
+        // BPM) more harmonics fit inside the candidate window, so the
+        // harmonic-averaged score genuinely converges toward the same
+        // near-1.0 value at both a fast tempo and its half for a cleanly
+        // periodic signal -- confirmed this is a real near-tie in the
+        // score itself (tightening the tie tolerance from 0.85 to 0.95
+        // changed nothing), not a loose-threshold artifact. A fixed 120 BPM
+        // preference will always resolve that genuine tie toward the
+        // slower octave once a tempo is more than a factor of sqrt(2) above
+        // it (~170 BPM) -- correct, principled behavior for a signal that
+        // really is ambiguous, but it means high-BPM octave resolution on
+        // *idealized* periodic test signals isn't a meaningful thing to
+        // assert against; real audio's natural asymmetry (dynamics,
+        // syncopation, non-uniform onset strength) is what actually
+        // resolves those cases, which is exactly why Phase 2.5a's
+        // real-audio harness against GiantSteps -- not this synthetic
+        // test -- is the authoritative check for fast-tempo accuracy (see
+        // training/eval/RESULTS.md: Accuracy1 28.2% -> 52.3% after this
+        // same change, measured on 664 real annotated tracks spanning up
+        // to 190+ BPM).
         let hop_ms = 512.0 / 44_100.0 * 1000.0;
-        for target_bpm in [60.0, 90.0, 140.0, 174.0, 200.0] {
+        for target_bpm in [60.0, 90.0, 120.0, 140.0, 160.0] {
             let period = period_frames_for_bpm(target_bpm, hop_ms).round() as usize;
-            let env = click_envelope(period, 20);
+            let env = jittered_click_envelope(period, 20);
             let est = estimate_tempo(&env, hop_ms, DEFAULT_BPM_MIN, DEFAULT_BPM_MAX).unwrap();
             assert!(
                 (est.bpm - target_bpm).abs() / target_bpm < 0.03,
