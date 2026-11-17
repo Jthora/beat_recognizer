@@ -59,9 +59,9 @@ def mp3_to_wav(mp3_path: Path, wav_path: Path) -> None:
     )
 
 
-def run_cli(wav_path: Path) -> dict | None:
+def run_cli(wav_path: Path, mode: str = "offline") -> dict | None:
     result = subprocess.run(
-        [str(CLI_PATH), str(wav_path), "--mode", "offline"],
+        [str(CLI_PATH), str(wav_path), "--mode", mode],
         capture_output=True,
         text=True,
         timeout=120,
@@ -72,11 +72,11 @@ def run_cli(wav_path: Path) -> dict | None:
     return json.loads(result.stdout)
 
 
-def score_track(audio_path: Path, true_bpm: float, tmp_dir: Path) -> TrackResult:
+def score_track(audio_path: Path, true_bpm: float, tmp_dir: Path, mode: str = "offline") -> TrackResult:
     wav_path = tmp_dir / (audio_path.stem + ".wav")
     try:
         mp3_to_wav(audio_path, wav_path)
-        output = run_cli(wav_path)
+        output = run_cli(wav_path, mode=mode)
     finally:
         wav_path.unlink(missing_ok=True)
 
@@ -106,20 +106,7 @@ def run_harness(index_path: Path, results_path: Path) -> None:
     if not CLI_PATH.exists():
         raise SystemExit(f"beat-dsp-cli not built at {CLI_PATH} -- run `cargo build --release -p beat-dsp` first")
 
-    pairs = []
-    with index_path.open() as f:
-        for line in f:
-            if line.strip():
-                entry = json.loads(line)
-                pairs.append((Path(entry["audio_path"]), entry["true_bpm"]))
-
-    results: list[TrackResult] = []
-    with tempfile.TemporaryDirectory() as tmp:
-        tmp_dir = Path(tmp)
-        for i, (audio_path, true_bpm) in enumerate(pairs):
-            results.append(score_track(audio_path, true_bpm, tmp_dir))
-            if (i + 1) % 50 == 0:
-                print(f"  scored {i + 1}/{len(pairs)}")
+    results = run_mode(index_path, "offline")
 
     n = len(results)
     scored = [r for r in results if r.detected_bpm is not None]
@@ -159,12 +146,89 @@ def run_harness(index_path: Path, results_path: Path) -> None:
     print(f"Wrote {results_path}")
 
 
+def run_mode(index_path: Path, mode: str) -> list[TrackResult]:
+    """Scores every track in a GiantSteps-shaped index (audio_path,
+    true_bpm) under a single CLI mode -- shared by run_streaming_vs_offline
+    below so offline and streaming go through the exact same code path,
+    the only variable being --mode."""
+    pairs = []
+    with index_path.open() as f:
+        for line in f:
+            if line.strip():
+                entry = json.loads(line)
+                pairs.append((Path(entry["audio_path"]), entry["true_bpm"]))
+
+    results: list[TrackResult] = []
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+        for i, (audio_path, true_bpm) in enumerate(pairs):
+            results.append(score_track(audio_path, true_bpm, tmp_dir, mode=mode))
+            if (i + 1) % 50 == 0:
+                print(f"  [{mode}] scored {i + 1}/{len(pairs)}")
+    return results
+
+
+def run_streaming_vs_offline(index_path: Path, results_path: Path) -> None:
+    """Production-readiness item 2: every accuracy number in this project
+    so far came from --mode offline. The causal streaming tracker -- what
+    actually runs during live playback -- has only ever been checked
+    against synthetic click tracks. This runs both modes over the same
+    index so the accuracy gap (whatever it is) becomes an explicit, tracked
+    number instead of an unknown."""
+    if not CLI_PATH.exists():
+        raise SystemExit(f"beat-dsp-cli not built at {CLI_PATH} -- run `cargo build --release -p beat-dsp` first")
+
+    offline_results = run_mode(index_path, "offline")
+    streaming_results = run_mode(index_path, "streaming")
+
+    def summarize(results: list[TrackResult]) -> dict:
+        n = len(results)
+        scored = [r for r in results if r.detected_bpm is not None]
+        return {
+            "n": n,
+            "scored": len(scored),
+            "accuracy1": sum(r.accuracy1 for r in scored) / n if n else 0.0,
+            "accuracy2": sum(r.accuracy2 for r in scored) / n if n else 0.0,
+            "accuracy2_with_alternate": sum(r.accuracy2_with_alternate for r in scored) / n if n else 0.0,
+        }
+
+    off = summarize(offline_results)
+    stream = summarize(streaming_results)
+
+    report_lines = [
+        f"# {index_path.parent.name} -- offline vs. streaming (production readiness item 2)",
+        "",
+        f"{off['n']} tracks. Offline: {off['scored']} scored. Streaming: {stream['scored']} scored.",
+        "",
+        "| metric | offline | streaming | gap |",
+        "|---|---|---|---|",
+        f"| Accuracy1 | {off['accuracy1']:.1%} | {stream['accuracy1']:.1%} | {stream['accuracy1'] - off['accuracy1']:+.1%} |",
+        f"| Accuracy2 | {off['accuracy2']:.1%} | {stream['accuracy2']:.1%} | {stream['accuracy2'] - off['accuracy2']:+.1%} |",
+        f"| Accuracy2+alt | {off['accuracy2_with_alternate']:.1%} | {stream['accuracy2_with_alternate']:.1%} | "
+        f"{stream['accuracy2_with_alternate'] - off['accuracy2_with_alternate']:+.1%} |",
+        "",
+        "Streaming numbers reflect the *final* estimate after processing the whole track in "
+        "512-sample chunks through the causal tracker -- a lower bound on real-time behavior, "
+        "since production also cares about how fast that estimate converges after track start, "
+        "which this doesn't measure (see the build plan's production-readiness item 2 for the "
+        "time-to-lock follow-up).",
+    ]
+    results_path.parent.mkdir(parents=True, exist_ok=True)
+    results_path.write_text("\n".join(report_lines) + "\n")
+    print(f"\nOffline  Acc1={off['accuracy1']:.1%} Acc2={off['accuracy2']:.1%}")
+    print(f"Streaming Acc1={stream['accuracy1']:.1%} Acc2={stream['accuracy2']:.1%}")
+    print(f"Wrote {results_path}")
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--index", type=Path, default=Path("eval_data/giantsteps/index.jsonl"))
     parser.add_argument("--results", type=Path, default=Path("eval/RESULTS.md"))
+    parser.add_argument("--streaming-comparison", action="store_true", help="also run production-readiness item 2")
     args = parser.parse_args()
 
     run_harness(args.index, args.results)
+    if args.streaming_comparison:
+        run_streaming_vs_offline(args.index, args.results.parent / "STREAMING_VS_OFFLINE.md")

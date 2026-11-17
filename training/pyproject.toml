@@ -14,6 +14,23 @@ dependencies = [
     "mir_eval>=0.7",
     "numpy>=1.26",
     "requests>=2.32",
+    "librosa>=0.10",
+    # madmom (BSD-licensed classical comb-filter tempo path, no NC-weight
+    # dependency) was tried as a third ensemble member but ruled out: 0.16.1
+    # (its last release, ~2018) breaks against Python 3.12/NumPy 2.x in
+    # multiple unrelated spots (collections.MutableSequence, np.float), not
+    # a one-line fix.
+    # pyACA (MIT) was also tried and ruled out for a worse reason than
+    # friction: computeBeatHisto's default iHopLength=8 makes its internal
+    # spectrogram loop (a plain unvectorized Python for-loop) run once per
+    # 8 samples of a whole track -- ~660k iterations for a 4-minute track
+    # at 22050 Hz -- which is almost certainly what produced the multi-
+    # minute hang and sustained memory churn observed right before this
+    # machine's 2026-08-10 19:53 kernel panic (watchdog timeout). It also
+    # has a genuine bug independent of that (computeBeatHisto.py line ~55
+    # pads with `d = [d, np.zeros(...)]`, a list literal instead of
+    # np.concatenate, which breaks downstream .ndim access on short
+    # inputs). Not pursued further -- see label/ensemble.py.
 ]
 
 [build-system]

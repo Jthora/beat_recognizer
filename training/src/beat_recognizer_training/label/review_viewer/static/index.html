@@ -1,0 +1,323 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Beat Review</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, system-ui, sans-serif; background: #12141a; color: #e8e8ec; display: flex; height: 100vh; }
+  #sidebar { width: 280px; overflow-y: auto; border-right: 1px solid #2a2d38; flex-shrink: 0; display: flex; flex-direction: column; }
+  #progress { padding: 12px; font-size: 13px; border-bottom: 1px solid #2a2d38; color: #b6bacb; flex-shrink: 0; }
+  #progress b { color: #e8e8ec; }
+  #progress .stats { margin-top: 4px; font-size: 12px; color: #8a8fa3; }
+  #sidebar h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #8a8fa3; padding: 12px 12px 4px; margin: 0; }
+  .track { padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #1c1e26; display: flex; justify-content: space-between; gap: 6px; }
+  .track:hover { background: #1c1e26; }
+  .track.active { background: #263047; }
+  .track .verdict { font-weight: 600; }
+  .verdict.ok { color: #4ade80; }
+  .verdict.bad { color: #f87171; }
+  .verdict.unsure { color: #fbbf24; }
+  #main { flex: 1; padding: 24px; overflow-y: auto; }
+  #info { display: flex; gap: 24px; margin-bottom: 12px; font-size: 14px; color: #b6bacb; flex-wrap: wrap; }
+  #info b { color: #e8e8ec; }
+  #agrees.agree { color: #4ade80; }
+  #agrees.disagree { color: #f87171; }
+  .agree-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; }
+  .agree-dot.agree { background: #4ade80; }
+  .agree-dot.disagree { background: #f87171; }
+  .agree-dot.unknown { background: #3b4260; }
+  #modeToggle { margin-bottom: 12px; font-size: 13px; }
+  #modeToggle label { margin-right: 16px; cursor: pointer; }
+  audio { width: 100%; margin-bottom: 16px; }
+  #canvasWrap { position: relative; }
+  canvas { width: 100%; height: 220px; background: #1a1c24; border-radius: 6px; display: block; cursor: pointer; }
+  #buttons { margin-top: 16px; display: flex; gap: 10px; }
+  button.verdict-btn { font-size: 15px; padding: 10px 22px; border-radius: 6px; border: none; cursor: pointer; font-weight: 600; }
+  #okBtn { background: #4ade80; color: #06210f; }
+  #badBtn { background: #f87171; color: #2a0808; }
+  #unsureBtn { background: #fbbf24; color: #2a1e02; }
+  #hint { color: #8a8fa3; font-size: 12px; margin-top: 10px; }
+  #empty { padding: 40px; color: #8a8fa3; }
+  #errorBanner { display: none; background: #4a1414; color: #ffb4b4; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <div id="progress">
+    <div><b id="reviewedCount">0</b> / <span id="totalCount">0</span> reviewed</div>
+    <div class="stats" id="statsLine"></div>
+  </div>
+  <h2>Low confidence</h2>
+  <div id="lowList"></div>
+  <h2>High confidence</h2>
+  <div id="highList"></div>
+</div>
+<div id="main">
+  <div id="empty">Pick a track on the left (or press → to start with the first).</div>
+  <div id="player" style="display:none">
+    <div id="errorBanner"></div>
+    <div id="info">
+      <div>BPM: <b id="bpm"></b></div>
+      <div>Confidence: <b id="confidence"></b></div>
+      <div>Alternate: <b id="alternate"></b></div>
+      <div>Group: <b id="group"></b></div>
+      <div>librosa (DP): <b id="librosaBt"></b></div>
+      <div>librosa (PLP): <b id="librosaPlp"></b></div>
+      <div>Cross-check: <b id="agrees"></b></div>
+    </div>
+    <div id="modeToggle">
+      <label><input type="radio" name="mode" value="original" checked> Original audio</label>
+      <label><input type="radio" name="mode" value="click"> Click-track audio</label>
+    </div>
+    <audio id="audio" controls></audio>
+    <div id="canvasWrap">
+      <canvas id="canvas"></canvas>
+    </div>
+    <div id="buttons">
+      <button class="verdict-btn" id="okBtn">OK (o)</button>
+      <button class="verdict-btn" id="badBtn">BAD (b)</button>
+      <button class="verdict-btn" id="unsureBtn">UNSURE (u)</button>
+    </div>
+    <div id="hint">Space = play/pause · ←/→ = prev/next track (no verdict) · click waveform to seek · o/b/u records a verdict and auto-advances.</div>
+  </div>
+</div>
+<script>
+let tracks = [];
+let current = null;
+let audioBuffer = null;
+let audioCtx = null;
+let loadToken = 0; // guards against a slow-resolving fetch/decode clobbering a track the user has since switched away from
+
+const audioEl = document.getElementById('audio');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const waveformCache = document.createElement('canvas'); // static waveform+ticks, redrawn only on track/resize change
+const waveformCtx = waveformCache.getContext('2d');
+const errorBanner = document.getElementById('errorBanner');
+
+async function loadManifest() {
+  const res = await fetch('/manifest.json');
+  tracks = await res.json();
+  renderSidebar();
+}
+
+function renderSidebar() {
+  const lowList = document.getElementById('lowList');
+  const highList = document.getElementById('highList');
+  lowList.innerHTML = '';
+  highList.innerHTML = '';
+  let reviewed = 0;
+  const counts = { ok: 0, bad: 0, unsure: 0 };
+  for (const t of tracks) {
+    if (t.verdict) { reviewed++; counts[t.verdict] = (counts[t.verdict] || 0) + 1; }
+    const div = document.createElement('div');
+    div.className = 'track' + (current === t ? ' active' : '');
+    const label = document.createElement('span');
+    const dotClass = t.ensemble_agrees === true ? 'agree' : t.ensemble_agrees === false ? 'disagree' : 'unknown';
+    label.innerHTML = `<span class="agree-dot ${dotClass}"></span>${t.bpm ? t.bpm.toFixed(1) : '?'} bpm  c=${t.confidence !== null ? t.confidence.toFixed(2) : '?'}`;
+    const verdict = document.createElement('span');
+    verdict.className = 'verdict ' + (t.verdict || '');
+    verdict.textContent = t.verdict ? t.verdict.toUpperCase() : '—';
+    div.appendChild(label);
+    div.appendChild(verdict);
+    div.onclick = () => selectTrack(t);
+    (t.group === 'low_confidence' ? lowList : highList).appendChild(div);
+  }
+  document.getElementById('reviewedCount').textContent = reviewed;
+  document.getElementById('totalCount').textContent = tracks.length;
+  document.getElementById('statsLine').textContent =
+    `${counts.ok || 0} ok · ${counts.bad || 0} bad · ${counts.unsure || 0} unsure`;
+}
+
+function showError(msg) {
+  errorBanner.textContent = msg;
+  errorBanner.style.display = msg ? 'block' : 'none';
+}
+
+async function selectTrack(t) {
+  current = t;
+  showError('');
+  document.getElementById('empty').style.display = 'none';
+  document.getElementById('player').style.display = 'block';
+  document.getElementById('bpm').textContent = t.bpm ? t.bpm.toFixed(2) : '—';
+  document.getElementById('confidence').textContent = t.confidence !== null ? t.confidence.toFixed(3) : '—';
+  document.getElementById('alternate').textContent = t.alternate_bpm ? t.alternate_bpm.toFixed(2) : 'none';
+  document.getElementById('group').textContent = t.group;
+  document.getElementById('librosaBt').textContent = t.librosa_bt_bpm ? t.librosa_bt_bpm.toFixed(2) : '—';
+  document.getElementById('librosaPlp').textContent = t.librosa_plp_bpm ? t.librosa_plp_bpm.toFixed(2) : '—';
+  const agreesEl = document.getElementById('agrees');
+  const agreeLabel = t.ensemble_agrees === true ? 'agrees' : t.ensemble_agrees === false ? 'disagrees' : 'n/a';
+  agreesEl.textContent = t.agree_count ? `${agreeLabel} (${t.agree_count})` : agreeLabel;
+  agreesEl.className = t.ensemble_agrees === true ? 'agree' : t.ensemble_agrees === false ? 'disagree' : '';
+  renderSidebar();
+  await loadAudio();
+}
+
+function currentMode() {
+  return document.querySelector('input[name="mode"]:checked').value;
+}
+
+async function loadAudio() {
+  const token = ++loadToken;
+  const trackAtRequest = current;
+  const mode = currentMode();
+  const src = `/audio/${encodeURIComponent(current.id)}?mode=${mode}`;
+
+  try {
+    const res = await fetch(src);
+    if (!res.ok) throw new Error(`server returned ${res.status}`);
+    const buf = await res.arrayBuffer();
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const decoded = await audioCtx.decodeAudioData(buf.slice(0));
+
+    if (token !== loadToken || current !== trackAtRequest) return; // user moved on while this was in flight
+
+    audioEl.src = src;
+    audioEl.load();
+    audioBuffer = decoded;
+    resizeCanvas();
+    renderWaveformCache();
+  } catch (err) {
+    if (token !== loadToken || current !== trackAtRequest) return;
+    showError(`Couldn't load audio for this track: ${err.message}. (Is the external drive mounted?)`);
+    audioBuffer = null;
+  }
+}
+
+document.querySelectorAll('input[name="mode"]').forEach(r => r.addEventListener('change', loadAudio));
+audioEl.addEventListener('error', () => {
+  if (audioEl.error) showError(`Playback error: ${audioEl.error.message || 'unknown'}`);
+});
+
+function resizeCanvas() {
+  const displayWidth = canvas.clientWidth || 1200;
+  const displayHeight = canvas.clientHeight || 220;
+  for (const c of [canvas, waveformCache]) {
+    c.width = displayWidth;
+    c.height = displayHeight;
+  }
+}
+window.addEventListener('resize', () => {
+  if (!audioBuffer) return;
+  resizeCanvas();
+  renderWaveformCache();
+});
+
+function renderWaveformCache() {
+  const w = waveformCache.width, h = waveformCache.height;
+  waveformCtx.clearRect(0, 0, w, h);
+  const data = audioBuffer.getChannelData(0);
+  const duration = audioBuffer.duration;
+  const step = Math.max(1, Math.ceil(data.length / w));
+
+  waveformCtx.fillStyle = '#3b4260';
+  for (let x = 0; x < w; x++) {
+    let min = 1.0, max = -1.0;
+    const start = x * step;
+    for (let i = start; i < start + step && i < data.length; i++) {
+      const v = data[i];
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    const yMin = (0.5 - min * 0.45) * h;
+    const yMax = (0.5 - max * 0.45) * h;
+    waveformCtx.fillRect(x, yMax, 1, Math.max(1, yMin - yMax));
+  }
+
+  waveformCtx.strokeStyle = '#f0a020';
+  waveformCtx.lineWidth = 1;
+  for (const t of current.beat_times_s) {
+    const x = (t / duration) * w;
+    waveformCtx.beginPath();
+    waveformCtx.moveTo(x, 0);
+    waveformCtx.lineTo(x, h);
+    waveformCtx.stroke();
+  }
+}
+
+canvas.addEventListener('click', (e) => {
+  if (!audioBuffer) return;
+  const rect = canvas.getBoundingClientRect();
+  const frac = (e.clientX - rect.left) / rect.width;
+  audioEl.currentTime = frac * audioBuffer.duration;
+});
+
+function animate() {
+  requestAnimationFrame(animate);
+  if (!audioBuffer || !current) return;
+  const w = canvas.width, h = canvas.height;
+  ctx.drawImage(waveformCache, 0, 0);
+
+  const t = audioEl.currentTime;
+  const duration = audioBuffer.duration;
+  const x = (t / duration) * w;
+
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, h);
+  ctx.stroke();
+
+  let nearest = Infinity;
+  for (const bt of current.beat_times_s) {
+    const dist = Math.abs(bt - t);
+    if (dist < nearest) nearest = dist;
+  }
+  const flashWindow = 0.12;
+  if (nearest < flashWindow) {
+    const strength = 1 - nearest / flashWindow;
+    ctx.beginPath();
+    ctx.arc(x, 30, 6 + strength * 22, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 210, 80, ${strength * 0.9})`;
+    ctx.fill();
+  }
+}
+requestAnimationFrame(animate);
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === ' ') {
+    e.preventDefault();
+    audioEl.paused ? audioEl.play() : audioEl.pause();
+  } else if (e.key === 'o') { e.preventDefault(); setVerdict('ok'); }
+  else if (e.key === 'b') { e.preventDefault(); setVerdict('bad'); }
+  else if (e.key === 'u') { e.preventDefault(); setVerdict('unsure'); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); stepTrack(1); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); stepTrack(-1); }
+  else return;
+  document.activeElement && document.activeElement.blur && document.activeElement.blur();
+});
+
+function stepTrack(delta) {
+  if (!tracks.length) return;
+  const idx = current ? tracks.indexOf(current) : -1;
+  const next = tracks[Math.min(Math.max(idx + delta, 0), tracks.length - 1)];
+  if (next) selectTrack(next);
+}
+
+document.getElementById('okBtn').onclick = () => setVerdict('ok');
+document.getElementById('badBtn').onclick = () => setVerdict('bad');
+document.getElementById('unsureBtn').onclick = () => setVerdict('unsure');
+
+async function setVerdict(verdict) {
+  if (!current) return;
+  current.verdict = verdict;
+  renderSidebar();
+  fetch('/verdict', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: current.id, verdict }),
+  }).catch(() => showError('Verdict may not have saved -- check the server is still running.'));
+
+  // Prefer the next unreviewed track after this one in list order (natural forward
+  // progression); only wrap to the start if everything ahead is already done.
+  const idx = tracks.indexOf(current);
+  const next = tracks.slice(idx + 1).find(t => !t.verdict) || tracks.find(t => !t.verdict);
+  if (next) selectTrack(next);
+}
+
+loadManifest();
+</script>
+</body>
+</html>

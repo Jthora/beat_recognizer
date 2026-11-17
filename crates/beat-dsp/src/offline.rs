@@ -85,9 +85,25 @@ pub fn track_beats_dp(envelope: &[f32], target_period_frames: f32, alpha: f32) -
 pub struct OfflineResult {
     pub bpm: f32,
     pub confidence: f32,
+    /// The chosen candidate's score relative to the mean of every other
+    /// candidate scored -- same value `tempo::TempoEstimate::prominence`
+    /// already computes; offline reuses it directly since `analyze` calls
+    /// `tempo::estimate_tempo` for its one global estimate anyway (see
+    /// production-readiness item 2's confidence-signal exploration in the
+    /// build plan, iteration 2 step 6 -- lets the rubato calibration
+    /// re-check test prominence against the *exact* algorithm that
+    /// produced the original inverted-confidence finding).
+    pub prominence: f32,
+    /// Same reuse pattern as `prominence` above, for
+    /// `tempo::TempoEstimate::entropy`.
+    pub entropy: f32,
     /// The other tempo-octave candidate, when the global tempo estimate is
     /// genuinely ambiguous — see `tempo::TempoEstimate::alternate`.
     pub alternate: Option<tempo::AlternateTempo>,
+    /// Same reuse pattern as `prominence`/`entropy` above, for
+    /// `tempo::TempoEstimate::measure` -- Phase 3.5's downbeat detection
+    /// reuses this to group `beat_frames` into measures.
+    pub measure: Option<tempo::MetricalLevel>,
     /// Onset-envelope frame indices of each detected beat, chronological.
     pub beat_frames: Vec<usize>,
 }
@@ -101,7 +117,10 @@ pub fn analyze(envelope: &[f32], hop_ms: f64) -> Option<OfflineResult> {
     Some(OfflineResult {
         bpm: tempo_est.bpm,
         confidence: tempo_est.confidence,
+        prominence: tempo_est.prominence,
+        entropy: tempo_est.entropy,
         alternate: tempo_est.alternate,
+        measure: tempo_est.measure,
         beat_frames,
     })
 }

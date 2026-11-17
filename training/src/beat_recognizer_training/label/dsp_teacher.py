@@ -111,9 +111,12 @@ def load_labels(labels_path: Path) -> list[LabelRecord]:
 
 
 def select_confident_labels(labels_path: Path, min_confidence: float = 0.5) -> list[LabelRecord]:
-    """The actual Phase 4 training-set query: has_rhythm, confidence above
-    threshold, not flagged for review (or reviewed and accepted -- review
-    outcomes aren't tracked yet, see review_sample.py's TODO)."""
+    """DSP-confidence-only training-set query. Superseded by
+    ensemble.select_trusted_labels() wherever an ENSEMBLE.jsonl cross-check
+    exists -- the 500-track sample showed confidence >= 0.6 alone lets a
+    real 26% wrong-rate through (7/27) that independent-tracker agreement
+    catches, so this one's a fallback for label sets that haven't been
+    cross-checked yet, not the actual Phase 4 query anymore."""
     return [
         r
         for r in load_labels(labels_path)
@@ -128,7 +131,10 @@ if __name__ == "__main__":
     parser.add_argument("--manifest", type=Path, default=Path("data/PROVENANCE.jsonl"))
     parser.add_argument("--health", type=Path, default=Path("data/CORPUS_HEALTH.jsonl"))
     parser.add_argument("--out", type=Path, default=Path("data/LABELS.jsonl"))
+    parser.add_argument("--limit", type=int, default=None, help="cap the number of tracks (omit for the full active corpus)")
     args = parser.parse_args()
 
     corpus = load_active_corpus(args.manifest, args.health)
+    if args.limit:
+        corpus = corpus[: args.limit]
     bootstrap_labels(corpus, args.out)

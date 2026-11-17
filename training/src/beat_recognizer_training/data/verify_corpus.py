@@ -90,19 +90,39 @@ def probe_file(path: Path) -> HealthResult:
     return HealthResult(path_str, True, duration, sample_rate, mean_volume, None)
 
 
-def load_provenance_paths(manifest_path: Path) -> list[Path]:
+def load_provenance_paths(manifest_path: Path, exclude_source_datasets: frozenset[str] = frozenset()) -> list[Path]:
     paths = []
     with manifest_path.open() as f:
         for line in f:
             if line.strip():
-                paths.append(Path(json.loads(line)["file_path"]))
+                entry = json.loads(line)
+                if entry.get("source_dataset") in exclude_source_datasets:
+                    continue
+                paths.append(Path(entry["file_path"]))
     return paths
 
 
-def load_active_corpus(manifest_path: Path, health_path: Path) -> list[Path]:
-    """The list Phase 3 should actually use: everything in PROVENANCE.jsonl
-    minus anything this sweep flagged in CORPUS_HEALTH.jsonl."""
-    all_paths = load_provenance_paths(manifest_path)
+# Freesound Loop Dataset tracks carry confirmed ground-truth BPM already
+# (see fetch_freesound_loops.py / data/FREESOUND_LOOPS_LABELS.jsonl) even
+# though they're logged into the same shared PROVENANCE.jsonl as every
+# other source. Phase 3's DSP-estimate-and-cross-check tiering pipeline is
+# for tracks *without* independent ground truth -- running it on these too
+# would waste real time re-estimating BPM this project already has a
+# better answer for, and could even silently tier a confirmed-BPM loop
+# into needs_review if DSP+ensemble happened to disagree with it.
+DEFAULT_EXCLUDED_SOURCE_DATASETS = frozenset({"freesound-loops"})
+
+
+def load_active_corpus(
+    manifest_path: Path,
+    health_path: Path,
+    exclude_source_datasets: frozenset[str] = DEFAULT_EXCLUDED_SOURCE_DATASETS,
+) -> list[Path]:
+    """The list Phase 3's DSP-bootstrap/ensemble/tiering pipeline should
+    actually use: everything in PROVENANCE.jsonl minus anything this sweep
+    flagged in CORPUS_HEALTH.jsonl, minus sources with their own confirmed
+    ground truth (see DEFAULT_EXCLUDED_SOURCE_DATASETS)."""
+    all_paths = load_provenance_paths(manifest_path, exclude_source_datasets)
     if not health_path.exists():
         return all_paths
     flagged = set()
